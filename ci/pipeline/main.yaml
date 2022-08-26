@@ -23,6 +23,9 @@ resources:
     check_every: 24h
     source:
       constrain: gt
+      ignored_paths:
+        - ci/
+        - README.md
 
   - name: pull-request
     type: pull-request
@@ -184,6 +187,7 @@ jobs:
                         #!/bin/sh
                         echo "Concourse: Version bump did not happen." | tee pr-notes/msg
               params:
+                changed_files: /pull-request/.git/resource/changed_files
                 current_version: main-tags/.git/ref
                 next_version:  pull-request/VERSION
 
