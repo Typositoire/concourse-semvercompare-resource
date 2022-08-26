@@ -11,6 +11,13 @@ source=$1
 payload=$(mktemp semver-compare-request.XXXXXX)
 cat > $payload <&0
 
+# Debug?
+debug=$(jq -r '.source.debug // ""' < $payload)
+
+if [ ! -z "$debug" ]; then
+  set -x
+fi
+
 # Parse source params
 constrain=$(jq -r '.source.constrain // "gt"' < $payload)
 
@@ -23,27 +30,31 @@ if [ -z "$current_version" ] || [ -z "$next_version" ]; then
   exit 1
 fi
 
-if [ -f "$source/$next_version"]; then {
+if [ -f "$source/$next_version" ]; then
   next_version=$(cat $source/$next_version)
-}
+fi
 
-if [ -f "$source/$current_version"]; then {
+if [ -f "$source/$current_version" ]; then
   current_version=$(cat $source/$current_version)
-}
+fi
 
-if [ "${constrain}" == "gt" ]; then {
-  expectedResult = "1"
-} elif [ "${constrain}" == "eq" ]; then {
-  expectedResult = "0"
-} elif [ "${constrain}" == "lt" ]; then {
-  expectedResult = "-1"
-} else {
+if [ "${constrain}" == "gt" ]; then
+  EXPECTED="1"
+elif [ "${constrain}" == "eq" ]; then
+  EXPECTED="0"
+elif [ "${constrain}" == "lt" ]; then
+  EXPECTED="-1"
+else
   echo "invalid constrain, expecting one of 'gt, lt, eq'"
   exit 1
-}
+fi
 
 RESULT=$(bash /opt/resource/scripts/compare.sh ${next_version} ${current_version})
 
-if [ "${RESULT}" == "${expectResult}"]l then
+output="{}"
+
+if [ "${RESULT}" == "${EXPECTED}" ]; then
  output="$(jq -n "{version:{current_version:\"$current_version\", next_version:\"$next_version\", constrain: \"$constrain\"}, metadata: [{name: \"validConstrain\", value: \"true\"}]}")"
 fi
+
+echo "$output" | jq -s add  >&3
