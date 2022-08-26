@@ -2,7 +2,7 @@
 
 ![CI Build](https://concourse.pubb-it.com/api/v1/teams/main/pipelines/concourse-semvercompare-resource/jobs/build-image-tag/badge)
 
-Compare 2 semver. 
+Compare 2 semver.
 
 Keep
 It
@@ -23,6 +23,7 @@ resource_types:
 
 -   `debug`: _Optional._ Debug mode `set -x`.
 -   `constrain`: _Required._ One of `lt`, `gt`, `eq`.
+-   `ignored_paths`: _Optional._ List of paths to ignore for version bump.
 
 ## Behavior
 
@@ -36,6 +37,7 @@ resource_types:
 
 -   `current_version`: _Required._ Either a string semver compatible version or a path pointing to a semver compatible version.
 -   `next_version`: _Required._ Either a string semver compatible version or a path pointing to a semver compatible version.
+-   `changed_files`: _Optional._ List of files modified by a PR. Mainly used with `list_changed_files` option of `telia-oss/github-pr-resource`. Needs a list of `ignored_paths` in `source` configuration.
 
 ## Examples
 
@@ -52,6 +54,30 @@ resource_types:
 ```yaml
 - put: greater-than
   params:
+    current_version: main-tags/.git/ref
+    next_version:  pull-request/VERSION
+```
+
+### Example with ignored_paths
+
+This is a very opinionated feature, thought to work with https://github.com/telia-oss/github-pr-resource only.
+
+```yaml
+- name: greater-than
+    type: compare
+    check_every: 24h
+    source:
+      constrain: gt
+      ignored_paths:
+        - README.md
+```
+
+```yaml
+- put: greater-than
+  params:
+    ## List of files changed in the PR
+    ## https://github.com/telia-oss/github-pr-resource
+    changed_files: pull-request/.git/resource/changed_files
     current_version: main-tags/.git/ref
     next_version:  pull-request/VERSION
 ```
