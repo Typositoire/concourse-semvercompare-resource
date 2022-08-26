@@ -20,10 +20,12 @@ fi
 
 # Parse source params
 constrain=$(jq -r '.source.constrain // "gt"' < $payload)
+ignored_paths=$(jq -r '(.source.ignored_paths // ["."])[]' < $payload)
 
 # Parse params
 current_version=$(jq -r '.params.current_version // ""' < $payload)
 next_version=$(jq -r '.params.next_version // ""' < $payload)
+changed_files=$(jq -r '.params.changed_files // ""' < $payload)
 
 if [ -z "$current_version" ] || [ -z "$next_version" ]; then
   echo "invalid payload missing current or next version."
@@ -49,12 +51,23 @@ else
   exit 1
 fi
 
-RESULT=$(bash /opt/resource/scripts/compare.sh ${next_version} ${current_version})
+if [ ! -z "$ignored_paths" ] && [ ! -z "$changed_files" ]; then
+  paths_search=$(echo "$ignored_paths" | tr "\n\r" " " | awk '{$1=$1};1' | tr ' ' '|')
+else
+  paths_search=""
+fi
 
 output="{}"
 
-if [ "${RESULT}" == "${EXPECTED}" ]; then
- output="$(jq -n "{version:{current_version:\"$current_version\", next_version:\"$next_version\", constrain: \"$constrain\"}, metadata: [{name: \"validConstrain\", value: \"true\"}]}")"
+count=$(cat $source/$changed_files | egrep ${paths_search} | wc -l)
+if [ "$count" == "0" ]; then
+  output="$(jq -n "{version:{current_version:\"$current_version\", next_version:\"$next_version\", constrain: \"$constrain\"}, metadata: [{name: \"validConstrain\", value: \"skip\"}]}")"
+else
+  RESULT=$(bash /opt/resource/scripts/compare.sh ${next_version} ${current_version})
+
+  if [ "${RESULT}" == "${EXPECTED}" ]; then
+  output="$(jq -n "{version:{current_version:\"$current_version\", next_version:\"$next_version\", constrain: \"$constrain\"}, metadata: [{name: \"validConstrain\", value: \"true\"}]}")"
+  fi
 fi
 
 echo "$output" | jq -s add  >&3
