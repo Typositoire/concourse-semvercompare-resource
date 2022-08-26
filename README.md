@@ -45,10 +45,10 @@ resource_types:
 
 ```yaml
 - name: greater-than
-    type: compare
-    check_every: 24h
-    source:
-      constrain: gt
+  type: compare
+  check_every: 24h
+  source:
+    constrain: gt
 ```
 
 ```yaml
