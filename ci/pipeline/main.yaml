@@ -1,0 +1,195 @@
+# pipeline_name:  concourse-semvercompare-resource
+# team:           main
+
+---
+resource_types:
+  - name: pull-request
+    type: registry-image
+    source:
+      repository: teliaoss/github-pr-resource
+  - name: github-status
+    type: registry-image
+    source:
+      repository: resource/github-status
+  - name: compare
+    type: registry-image
+    source:
+      repository: ghcr.io/typositoire/concourse-semvercompare-resource
+      tag: latest
+
+resources:
+  - name: greater-than
+    type: compare
+    check_every: 24h
+    source:
+      constrain: gt
+
+  - name: pull-request
+    type: pull-request
+    check_every: 24h
+    webhook_token: ((github.webhook_token))
+    source:
+      repository: typositoire/concourse-semvercompare-resource
+      access_token: ((github.access_token))
+
+  - name: main-version
+    type: git
+    source:
+      paths:
+        - VERSION
+      uri: git@github.com:typositoire/concourse-semvercompare-resource.git
+      branch: main
+      private_key: ((github.deploy_key))
+
+  - name: main-version-write
+    type: git
+    source:
+      uri: git@github.com:typositoire/concourse-semvercompare-resource.git
+      branch: main
+      private_key: ((github.deploy_key))
+
+  - name: main-tags
+    type: git
+    source:
+      uri: git@github.com:typositoire/concourse-semvercompare-resource.git
+      branch: main
+      private_key: ((github.deploy_key))
+      tag_filter: "v*.*.*"
+
+  - name: resource-image-gh
+    type: registry-image
+    source:
+      repository: ghcr.io/typositoire/concourse-semvercompare-resource
+      username: typositoire
+      password: ((github.access_token))
+      tag: latest
+
+jobs:
+  - name: build-image-tag
+    public: true
+    plan:
+      - get: main-tags
+        trigger: true
+        version: every
+      - task: build
+        privileged: true
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: concourse/oci-build-task
+          inputs:
+            - name: main-tags
+              path: .
+          outputs:
+            - name: image
+          run:
+            path: build
+      - in_parallel:
+          steps:
+            - put: resource-image-gh
+              params:
+                image: image/image.tar
+                additional_tags: main-tags/.git/ref
+
+  - name: tag-main
+    plan:
+      - get: main-version
+        trigger: true
+        version: every
+      - task: compute-info
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: alpine/git
+              tag: v2.30.2
+          inputs:
+            - name: main-version
+          outputs:
+            - name: info
+          run:
+            path: sh
+            args:
+              - -c
+              - |
+                #!/bin/sh
+
+                cd main-version
+                git log $(git describe --tags --abbrev=0)..HEAD --oneline > ../info/notes
+
+                echo v$(cat VERSION) > ../info/tag
+      - put: main-version-write
+        params:
+          repository: main-version
+          tag: info/tag
+          only_tag: true
+          branch: main
+          annotate: info/notes
+  - name: validate-prs
+    plan:
+      - in_parallel:
+          steps:
+            - get: pull-request
+              trigger: true
+              version: every
+              params:
+                list_changed_files: true
+            - get: main-tags
+              params:
+                fetch_tags: true
+      - in_parallel:
+          steps:
+            - put: update-status
+              resource: pull-request
+              params:
+                path: pull-request
+                status: pending
+              get_params: { skip_download: true }
+            - put: greater-than
+              on_success:
+                task: success-message
+                config:
+                  platform: linux
+                  image_resource:
+                    type: registry-image
+                    source:
+                      repository: alpine
+                  outputs:
+                    - name: pr-notes
+                  run:
+                    path: sh
+                    args:
+                      - -c
+                      - |
+                        #!/bin/sh
+                        echo "Concourse: Version bump found." | tee pr-notes/msg
+              on_failure:
+                task: failure-message
+                config:
+                  platform: linux
+                  image_resource:
+                    type: registry-image
+                    source:
+                      repository: alpine
+                  outputs:
+                    - name: pr-notes
+                  run:
+                    path: sh
+                    args:
+                      - -c
+                      - |
+                        #!/bin/sh
+                        echo "Concourse: Version bump did not happen." | tee pr-notes/msg
+              params:
+                current_version: main-tags/.git/ref
+                next_version:  pull-request/VERSION
+
+      - put: pull-request
+        params:
+          path: pull-request
+          status: success
+          delete_previous_comments: true
+          comment_file: pr-notes/msg

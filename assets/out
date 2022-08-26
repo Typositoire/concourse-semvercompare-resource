@@ -1,0 +1,60 @@
+#!/bin/bash
+
+set -e
+set -o pipefail
+
+exec 3>&1 # make stdout available as fd 3 for the result
+exec 1>&2 # redirect all output to stderr for logging
+
+# Read inputs
+source=$1
+payload=$(mktemp semver-compare-request.XXXXXX)
+cat > $payload <&0
+
+# Debug?
+debug=$(jq -r '.source.debug // ""' < $payload)
+
+if [ ! -z "$debug" ]; then
+  set -x
+fi
+
+# Parse source params
+constrain=$(jq -r '.source.constrain // "gt"' < $payload)
+
+# Parse params
+current_version=$(jq -r '.params.current_version // ""' < $payload)
+next_version=$(jq -r '.params.next_version // ""' < $payload)
+
+if [ -z "$current_version" ] || [ -z "$next_version" ]; then
+  echo "invalid payload missing current or next version."
+  exit 1
+fi
+
+if [ -f "$source/$next_version" ]; then
+  next_version=$(cat $source/$next_version)
+fi
+
+if [ -f "$source/$current_version" ]; then
+  current_version=$(cat $source/$current_version)
+fi
+
+if [ "${constrain}" == "gt" ]; then
+  EXPECTED="1"
+elif [ "${constrain}" == "eq" ]; then
+  EXPECTED="0"
+elif [ "${constrain}" == "lt" ]; then
+  EXPECTED="-1"
+else
+  echo "invalid constrain, expecting one of 'gt, lt, eq'"
+  exit 1
+fi
+
+RESULT=$(bash /opt/resource/scripts/compare.sh ${next_version} ${current_version})
+
+output="{}"
+
+if [ "${RESULT}" == "${EXPECTED}" ]; then
+ output="$(jq -n "{version:{current_version:\"$current_version\", next_version:\"$next_version\", constrain: \"$constrain\"}, metadata: [{name: \"validConstrain\", value: \"true\"}]}")"
+fi
+
+echo "$output" | jq -s add  >&3
