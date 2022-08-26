@@ -64,12 +64,12 @@ This is a very opinionated feature, thought to work with https://github.com/teli
 
 ```yaml
 - name: greater-than
-    type: compare
-    check_every: 24h
-    source:
-      constrain: gt
-      ignored_paths:
-        - README.md
+  type: compare
+  check_every: 24h
+  source:
+    constrain: gt
+    ignored_paths:
+      - README.md
 ```
 
 ```yaml
@@ -86,10 +86,10 @@ This is a very opinionated feature, thought to work with https://github.com/teli
 
 ```yaml
 - name: greater-than
-    type: compare
-    check_every: 24h
-    source:
-      constrain: gt
+  type: compare
+  check_every: 24h
+  source:
+    constrain: gt
 ```
 
 ```yaml
